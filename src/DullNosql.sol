@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import {IDullNosql} from "./interfaces/IDullNosql.sol";
@@ -22,24 +22,18 @@ contract DullNosql is IDullNosql {
         uint value
     ) external returns (uint documentIndex) {
         Collection storage collection = collections[collectionName];
+        OrderPreservedMapping.Map storage doc;
         if (index == 0) {
-            // documents = [1,2,3, 4: [key: value]]
             collection.documents.push();
             uint size = collection.documents.length;
-
-            OrderPreservedMapping.Map storage doc = collection.documents[
-                size - 1
-            ];
+            doc = collection.documents[size - 1];
             doc.set(key, value);
             return size;
-        } else {
-            assert(index <= collection.documents.length);
-            OrderPreservedMapping.Map storage doc = collection.documents[
-                index - 1
-            ];
-            doc.set(key, value);
-            return index;
         }
+        require(index <= collection.documents.length, "index has to be less or equal collection's size");
+        doc = collection.documents[index - 1];
+        doc.set(key, value);
+        return index;
     }
 
     function getDocumentValue(
@@ -47,14 +41,36 @@ contract DullNosql is IDullNosql {
         uint index,
         string memory key
     ) external view returns (uint value) {
-        // TODO: add logic here
+        Collection storage collection = collections[collectionName];
+        require(index <= collection.documents.length, "index has to be less or equal collection's size");
+        OrderPreservedMapping.Map storage doc = collection.documents[index - 1];
+        value = doc.get(key);
     }
 
     function getDocumentValues(
         string memory collectionName,
         string memory key
     ) external view returns (uint[] memory) {
-        // TODO: add logic here
+        Collection storage collection = collections[collectionName];
+        uint256[] memory tmpResult = new uint256[](
+            collection.documents.length
+        );
+        uint256 count;
+
+        for (uint i = 0; i < tmpResult.length; i++) {
+            OrderPreservedMapping.Map storage doc = collection.documents[i];
+            if (doc.exist[key] == true) {
+                tmpResult[count] = doc.get(key);
+                count++;
+            }
+        }
+
+        uint256[] memory result = new uint256[](count);
+        for (uint i = 0; i < count; i++) {
+            result[i] = tmpResult[i];
+        }
+
+        return result;
     }
 
     function updateDocumentValues(
@@ -62,13 +78,34 @@ contract DullNosql is IDullNosql {
         string memory key,
         uint value
     ) external returns (bool updated) {
-        // TODO: add logic here
+        Collection storage collection = collections[collectionName];
+        for (uint i = 0; i < collection.documents.length; i++) {
+            OrderPreservedMapping.Map storage doc = collection.documents[i];
+            if (doc.exist[key] == true) {
+                doc.set(key, value);
+                updated = true;
+            }
+        }
     }
 
     function deleteDocumentKeys(
         string memory collectionName,
         string memory key
     ) external returns (bool deleted) {
-        // TODO: add logic here
+        Collection storage collection = collections[collectionName];
+
+        for (uint i = 0; i < collection.documents.length; i++) {
+            OrderPreservedMapping.Map storage doc = collection.documents[i];
+            if (doc.exist[key] == true) {
+                uint256 size = doc.keys.length;
+                uint256 index = doc.getIndex(key);
+                doc.keys[index] = doc.keys[size - 1];
+                doc.keys.pop();
+                delete doc.data[key];
+                delete doc.index[key];
+                delete doc.exist[key];
+                deleted = true;
+            }
+        }
     }
 }
